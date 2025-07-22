@@ -1,0 +1,179 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © AlgoAlpha - Geliştirilmiş versiyon v5.0 (Trend Devam Sinyalli)
+
+//@version=5
+indicator("Ultimate Trend Confirmation System (UTCS v5.0 - Pro)", shorttitle="UTCS Pro v5.0", overlay=true)
+
+// =================================================================================
+//                                     AYARLAR
+// =================================================================================
+string g_main = "1. Ana Strateji Ayarları"
+int length = input.int(70, "ZLEMA Periyodu", group = g_main)
+float mult = input.float(1.2, "Bant Çarpanı", group = g_main)
+int secondaryLen = input.int(200, "İkincil EMA Periyodu", group = g_main, tooltip="Grafikteki uzun vadeli trendi gösteren ikincil EMA çizgisi.")
+
+string confirmationMode_desc = "Esnek: En çok sinyali üretir.\nDengeli: Ana ve ikincil trend uyumunu arar.\nKatı: En yüksek kaliteli, en nadir sinyalleri üretir."
+string confirmationMode = input.string(defval="Dengeli (Ana + İkincil Trend)", title="Sinyal Onay Modu", options=["Esnek (Sadece Ana Trend)", "Dengeli (Ana + İkincil Trend)", "Katı (Tüm Filtreler)"], group=g_main, tooltip=confirmationMode_desc)
+
+string g_filters = "2. Filtre Parametreleri"
+int adxLen = input.int(14, "ADX Periyodu", group = g_filters)
+int adxThreshold = input.int(22, "ADX Trend Eşiği", group = g_filters)
+int rsiLen = input.int(14, "RSI Periyodu", group = g_filters)
+int rsiMidline = input.int(50, "RSI Orta Çizgisi", group = g_filters)
+int volLen = input.int(20, "Hacim Ortalaması Periyodu", group = g_filters)
+
+string g_mtf = "3. Çoklu Zaman Dilimi (MTF)"
+string t1 = input.timeframe("1", "Zaman Dilimi 1", group = g_mtf)
+string t2 = input.timeframe("5", "Zaman Dilimi 2", group = g_mtf)
+string t3 = input.timeframe("15", "Zaman Dilimi 3", group = g_mtf)
+string t4 = input.timeframe("60", "Zaman Dilimi 4", group = g_mtf)
+string t5 = input.timeframe("240", "Zaman Dilimi 5", group = g_mtf)
+string t6 = input.timeframe("1D", "Zaman Dilimi 6", group = g_mtf)
+
+string g_app = "4. Görünüm Ayarları"
+color greenColor = input.color(#00ffbb, "Yükseliş Rengi", group = g_app)
+color redColor = input.color(#ff1100, "Düşüş Rengi", group = g_app)
+color grayColor = input.color(#808080, "Yatay Piyasa Rengi", group = g_app)
+
+// =================================================================================
+//                                   HESAPLAMALAR
+// =================================================================================
+float src = close
+int lag = int(math.floor((length - 1) / 2))
+float zlema = ta.ema(src + (src - src[lag]), length)
+float volatility = ta.highest(ta.atr(length), length * 3) * mult
+float secondaryEma = ta.ema(src, secondaryLen)
+
+var int trend = 0
+if ta.crossover(close, zlema + volatility)
+    trend := 1
+if ta.crossunder(close, zlema - volatility)
+    trend := -1
+
+[diplus, diminus, adx] = ta.dmi(adxLen, adxLen)
+float rsi = ta.rsi(src, rsiLen)
+float avgVolume = ta.sma(volume, volLen)
+
+// =================================================================================
+//                                   FİLTRE KOŞULLARI
+// =================================================================================
+bool adxConfirm = adx > adxThreshold
+bool rsiConfirm = trend == 1 ? rsi > rsiMidline : rsi < rsiMidline
+bool volumeConfirm = volume > avgVolume
+bool secondaryTrendConfirm = trend == 1 ? close > secondaryEma : close < secondaryEma
+
+bool isConfirmed = if confirmationMode == "Esnek (Sadece Ana Trend)"
+    true
+else if confirmationMode == "Dengeli (Ana + İkincil Trend)"
+    secondaryTrendConfirm
+else if confirmationMode == "Katı (Tüm Filtreler)"
+    adxConfirm and rsiConfirm and volumeConfirm and secondaryTrendConfirm
+else
+    na
+
+// =================================================================================
+//                             BİRLEŞTİRİLMİŞ SİNYAL MANTIĞI
+// =================================================================================
+// 1. Trend Başlangıç Sinyalleri
+bool strongBuySignal = trend == 1 and trend[1] == -1 and isConfirmed
+bool strongSellSignal = trend == -1 and trend[1] == 1 and isConfirmed
+
+// 2. YENİ: Trend Devam Sinyalleri
+// Fiyatın, devam eden bir trend içinde ZLEMA'ya geri çekilip tekrar trend yönünde kesmesiyle tetiklenir.
+bool continuationBuySignal = trend == 1 and ta.crossover(close, zlema) and isConfirmed
+bool continuationSellSignal = trend == -1 and ta.crossunder(close, zlema) and isConfirmed
+
+// =================================================================================
+//                                   GÖRSELLEŞTİRME
+// =================================================================================
+color zlemaColor = trend != 0 ? (trend == 1 ? greenColor : redColor) : grayColor
+plot(zlema, "ZLEMA", color=zlemaColor, linewidth=2)
+plot(trend == -1 ? zlema + volatility : na, "Üst Bant", color.new(redColor, 90), style=plot.style_circles)
+plot(trend == 1 ? zlema - volatility : na, "Alt Bant", color.new(greenColor, 90), style=plot.style_circles)
+plot(secondaryEma, "İkincil EMA", color.orange, linewidth = 2)
+
+if (strongBuySignal)
+    label.new(bar_index, low, "▲\nBAŞLA", color=greenColor, textcolor=color.white, style=label.style_label_up)
+if (strongSellSignal)
+    label.new(bar_index, high, "▼\nBAŞLA", color=redColor, textcolor=color.white, style=label.style_label_down)
+
+// YENİ: Trend Devam Sinyallerini Grafikte Göster
+plotchar(continuationBuySignal, "Devam Alım", "▲", location.belowbar, greenColor, size=size.small)
+plotchar(continuationSellSignal, "Devam Satım", "▼", location.abovebar, redColor, size=size.small)
+
+// =================================================================================
+//                                 KONTROL PANELLERİ
+// =================================================================================
+var table mtf_panel = table.new(position.top_right, 2, 7, bgcolor=color.new(grayColor, 85), border_width=1)
+f_getMtfTrend(t) => request.security(syminfo.tickerid, t, trend, lookahead = barmerge.lookahead_on)
+f_fill_mtf_cell(tableId, row, tf) =>
+    s = f_getMtfTrend(tf)
+    table.cell(tableId, 0, row, tf, text_color=color.white)
+    table.cell(tableId, 1, row, s == 1 ? "Yükseliş" : "Düşüş", bgcolor=s == 1 ? greenColor : redColor)
+
+if barstate.islast
+    table.cell(mtf_panel, 0, 0, "Zaman Dilimi", text_color=color.white)
+    table.cell(mtf_panel, 1, 0, "Trend", text_color=color.white)
+    f_fill_mtf_cell(mtf_panel, 1, t1)
+    f_fill_mtf_cell(mtf_panel, 2, t2)
+    f_fill_mtf_cell(mtf_panel, 3, t3)
+    f_fill_mtf_cell(mtf_panel, 4, t4)
+    f_fill_mtf_cell(mtf_panel, 5, t5)
+    f_fill_mtf_cell(mtf_panel, 6, t6)
+
+var table dashboard = table.new(position.bottom_right, 2, 7, bgcolor=color.new(grayColor, 85), border_width=1)
+f_fill_dashboard_cell(tableId, row, title, status, status_color) =>
+    table.cell(tableId, 0, row, title, text_halign=text.align_left, text_color=color.white)
+    table.cell(tableId, 1, row, status, text_halign=text.align_right, text_color=status_color)
+
+if barstate.islast
+    table.cell(dashboard, 0, 0, "SİSTEM KONTROL", text_halign=text.align_left, text_color=color.white)
+    table.merge_cells(dashboard, 0, 0, 1, 0)
+    
+    table.cell(dashboard, 0, 1, "Onay Modu", text_halign=text.align_left, text_color=color.white)
+    table.cell(dashboard, 1, 1, confirmationMode, text_halign=text.align_right, text_color=color.yellow)
+
+    string anaTrendStatus = trend == 1 ? "Yükseliş" : "Düşüş"
+    color anaTrendColor = trend == 1 ? greenColor : redColor
+    f_fill_dashboard_cell(dashboard, 2, "Ana Trend", anaTrendStatus, anaTrendColor)
+
+    string ikincilTrendStatus = secondaryTrendConfirm ? "Onaylandı" : "Reddedildi"
+    color ikincilTrendColor = secondaryTrendConfirm ? greenColor : redColor
+    f_fill_dashboard_cell(dashboard, 3, "İkincil Trend", ikincilTrendStatus, ikincilTrendColor)
+
+    string adxStatus = adxConfirm ? "Trendli" : "Yatay"
+    color adxColor = adxConfirm ? greenColor : redColor
+    f_fill_dashboard_cell(dashboard, 4, "Piyasa Gücü (ADX)", adxStatus, adxColor)
+
+    string rsiStatus = rsiConfirm ? "Onaylandı" : "Reddedildi"
+    color rsiColor = rsiConfirm ? greenColor : redColor
+    f_fill_dashboard_cell(dashboard, 5, "Momentum (RSI)", rsiStatus, rsiColor)
+
+    string volumeStatus = volumeConfirm ? "Onaylandı" : "Yetersiz"
+    color volumeColor = volumeConfirm ? greenColor : redColor
+    f_fill_dashboard_cell(dashboard, 6, "Hacim Teyidi", volumeStatus, volumeColor)
+
+// =================================================================================
+//                     OTOMASYON İÇİN ZENGİN JSON ALARMI
+// =================================================================================
+f_build_json_payload(signal_type) =>
+    indicator_data = '{"adx_value":' + str.tostring(math.round(adx, 2)) + 
+       ',"rsi_value":' + str.tostring(math.round(rsi, 2)) + 
+       ',"volume_confirmed":' + str.tostring(volumeConfirm) + 
+       ',"secondary_trend_confirmed":' + str.tostring(secondaryTrendConfirm) + '}'
+    
+    json_payload = '{"ticker":"' + syminfo.ticker + 
+       '","signal_type":"' + signal_type + 
+       '","signal_price":' + str.tostring(close) + 
+       ',"timeframe":"' + timeframe.period + 
+       ',"confirmation_mode":"' + confirmationMode + '"' +
+       ',"indicator_data":' + indicator_data + '}'
+    json_payload
+
+// YENİ: Hem başlangıç hem de devam sinyalleri için alarm tetikle
+if (strongBuySignal or strongSellSignal or continuationBuySignal or continuationSellSignal)
+    signalType = strongBuySignal ? "STRONG_BUY" : 
+         strongSellSignal ? "STRONG_SELL" : 
+         continuationBuySignal ? "CONTINUATION_BUY" : "CONTINUATION_SELL"
+    alert_message = f_build_json_payload(signalType)
+    alert(alert_message, alert.freq_once_per_bar)
