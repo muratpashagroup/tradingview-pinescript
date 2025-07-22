@@ -34,6 +34,14 @@ UTCS Pro v5.0, basit bir trend indikatörünün çok ötesindedir. Temel amacı,
 
 ---
 
+## 🖼️ İndikatör Ayarları (Parametre Tablosu)
+
+Aşağıda, sistemin TradingView içindeki ayar arayüzünü gösteren tabloyu görebilirsiniz:
+
+![İndikatör Ayarları](./indicator-parameters.png)
+
+---
+
 ## 📈 TradingView'e Ekleme
 
 1.  TradingView'de grafiğinizi açın ve alt paneldeki **"Pine Editörü"** sekmesine tıklayın.
